@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Chain Analysis & Financial Chart Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;600&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #cce7f9;
+            padding: 20px;
+        }
+
+        .dashboard-layout {
+            display: flex;
+            flex-wrap: wrap; 
+            gap: 20px;
+            max-width: 1400px; 
+            margin: 0 auto;
+        }
+
+       
+        .table-container {
+            
+            flex: 1 1 100%; 
+            min-width: 350px; 
+            background: #fbecec;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+            padding: 20px;
+            overflow-x: auto; 
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        table {
+            width: 100%;
+            min-width: 700px;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .upload-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: #fff;
+            cursor: pointer;
+        }
+        
+        
+        #chart-container {
+            flex: 2 1 100%; 
+            min-width: 500px; 
+            background: rgb(248, 240, 240);
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+            padding: 20px;
+            align-self: flex-start; 
+        }
+        .line {
+            fill: none;
+            stroke-width: 3px;
+            transition: stroke-dashoffset 2s ease-out;
+        }
+
+        .axis-label {
+            font-weight: 600;
+            fill: #333;
+            font-size: 14px;
+        }
+        .grid line {
+            stroke: #e0e0e0;
+            stroke-opacity: 1;
+            shape-rendering: crispEdges;
+        }
+        .grid path {
+            stroke-width: 0;
+        }
+
+        
+        @media (min-width: 1024px) {
+            .table-container {
+                flex: 1 1 30%; 
+            }
+            #chart-container {
+                flex: 2 1 65%; 
+            }
+        }
+        
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 12px;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+        .tooltip-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    
+    <h1 class="text-4xl font-extrabold text-gray-900 mb-8 pb-2 text-center">Supply Chain Financial Dashboard</h1>
+
+    <div class="dashboard-layout">
+        
+        <div class="table-container">
+            <h2>Supply Chain Margin of Profit Calculator</h2>
+
+            <div class="upload-container">
+                <input type="file" id="csvFile" accept=".csv" />
+                <p class="text-sm text-gray-500 mt-2">Upload a CSV file with financial data to populate the table and chart.</p>
+            </div>
+
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>EstimatedCost</th>
+                        <th>RawMaterial</th>
+                        <th>Workmanship</th>
+                        <th>Storage</th>
+                        <th>ActualCost</th>
+                        <th>SoldPrice</th>
+                        <th>MarginOfProfit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="8" class="text-gray-500">Upload a CSV file to populate the table.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="chart-container">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 pb-2 text-center">Financial Performance Trends</h2>
+            <div id="chart" class="w-full">
+                <p class="text-center text-gray-500">Chart will appear here after data is loaded.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const text = event.target.result;
+                const processedData = processCSV(text);
+                populateTable(processedData);
+                drawChart(processedData); 
+            };
+            reader.readAsText(file);
+        });
+
+        
+        function processCSV(data) {
+            const rows = data.trim().split('\n').map(r => r.split(','));
+            const header = rows[0].map(h => h.trim().toLowerCase());
+            
+            const dateIdx = header.indexOf("date");
+            const estIdx = header.indexOf("estimatedcost");
+            const rawIdx = header.indexOf("rawmaterial");
+            const workIdx = header.indexOf("workmanship");
+            const storeIdx = header.indexOf("storagecost");
+
+            const parseDate = d3.timeParse("%m/%d/%y"); 
+
+            const dataSet = rows.slice(1).map(row => {
+                const dateString = dateIdx !== -1 ? row[dateIdx].trim() : "";
+                const estCost = estIdx !== -1 ? parseFloat(row[estIdx].replace(/[^0-9.]/g, '')) || 0 : 0;
+                const raw = rawIdx !== -1 ? parseFloat(row[rawIdx].replace(/[^0-9.]/g, '')) || 0 : 0;
+                const work = workIdx !== -1 ? parseFloat(row[workIdx].replace(/[^0-9.]/g, '')) || 0 : 0;
+                const storage = storeIdx !== -1 ? parseFloat(row[storeIdx].replace(/[^0-9.]/g, '')) || 0 : 0;
+
+                const actualCostPrice = raw + work + storage;
+                const soldPrice = estCost * 1.1; 
+                const marginOfProfit = soldPrice - actualCostPrice;
+                
+                return {
+                    dateString: dateString,
+                    date: parseDate(dateString), 
+                    EstimatedCost: estCost,
+                    RawMaterial: raw,
+                    Workmanship: work,
+                    StorageCost: storage,
+                    ActualCostPrice: actualCostPrice,
+                    SoldPrice: soldPrice,
+                    MarginOfProfit: marginOfProfit
+                };
+            }).filter(d => d.date); 
+
+            return dataSet;
+        }
+
+       
+        function populateTable(dataSet) {
+            const tbody = document.querySelector("#dataTable tbody");
+            tbody.innerHTML = "";
+
+            if (dataSet.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-gray-500">No valid data found in CSV.</td></tr>';
+                return;
+            }
+
+            dataSet.forEach(d => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${d.dateString}</td>
+                    <td>${d.EstimatedCost.toFixed(2)}</td>
+                    <td>${d.RawMaterial.toFixed(2)}</td>
+                    <td>${d.Workmanship.toFixed(2)}</td>
+                    <td>${d.StorageCost.toFixed(2)}</td>
+                    <td>${d.ActualCostPrice.toFixed(2)}</td>
+                    <td>${d.SoldPrice.toFixed(2)}</td>
+                    <td>${d.MarginOfProfit.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        
+        const drawChart = (rawData) => {
+            
+            const container = d3.select("#chart-container");
+            const clientWidth = container.node().getBoundingClientRect().width * 0.95;
+            
+            const fullWidth = Math.max(clientWidth, 600); 
+            const fullHeight = 550; 
+            const margin = { top: 50, right: 180, bottom: 80, left: 100 };
+            const width = fullWidth - margin.left - margin.right;
+            const height = fullHeight - margin.top - margin.bottom;
+
+            
+            d3.select("#chart").html("");
+
+            if (rawData.length === 0) {
+                 d3.select("#chart").html('<p class="text-center text-gray-500">Cannot draw chart: No valid data points.</p>');
+                 return;
+            }
+
+            
+            const lineKeys = [
+                { name: "Estimated Cost", key: "EstimatedCost" },
+                { name: "Actual Cost Price", key: "ActualCostPrice" },
+                { name: "Sold Price", key: "SoldPrice" },
+                { name: "Margin of Profit", key: "MarginOfProfit" }
+            ];
+
+            
+            const data = lineKeys.map(line => ({
+                name: line.name,
+                key: line.key,
+                values: rawData.map(d => ({
+                    date: d.date,
+                    value: d[line.key]
+                }))
+            }));
+            
+            
+            
+            const x = d3.scaleTime()
+                .domain(d3.extent(rawData, d => d.date))
+                .range([0, width]);
+
+            const minYValue = d3.min(data, series => d3.min(series.values, d => d.value));
+            const maxYValue = d3.max(data, series => d3.max(series.values, d => d.value));
+            
+            const y = d3.scaleLinear()
+                .domain([minYValue * 0.95, maxYValue * 1.05])
+                .range([height, 0]);
+
+          
+            const color = d3.scaleOrdinal()
+                .domain(lineKeys.map(d => d.name))
+                .range(d3.schemeDark2);
+
+
+            
+            const svg = d3.select("#chart")
+                .append("svg")
+                .attr("viewBox", `0 0 ${fullWidth} ${fullHeight}`)
+                .attr("preserveAspectRatio", "xMinYMin meet")
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+            
+           
+            const xAxis = g => g
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(d3.timeMonth.every(3)).tickFormat(d3.timeFormat("%b %y")))
+                .call(g => g.select(".domain").remove());
+            
+            const yAxis = g => g
+                .call(d3.axisLeft(y).ticks(10, "$.2s"))
+                .call(g => g.select(".domain").remove())
+                .call(g => g.selectAll(".tick line")
+                    .clone()
+                    .attr("class", "grid")
+                    .attr("x2", width)
+                    .attr("stroke-opacity", 0.1));
+
+            
+            const gX = svg.append("g").call(xAxis);
+            gX.append("text")
+                .attr("x", width / 2)
+                .attr("y", margin.bottom - 20)
+                .attr("fill", "#333")
+                .attr("text-anchor", "middle")
+                .attr("class", "axis-label")
+                .text("Time / Date");
+
+            const gY = svg.append("g").call(yAxis);
+            gY.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("y", -margin.left + 20)
+                .attr("x", 0 - (height / 2))
+                .attr("dy", "1em")
+                .attr("fill", "#333")
+                .attr("text-anchor", "middle")
+                .attr("class", "axis-label")
+                .text("Value ($)");
+            
+            
+           
+            const line = d3.line()
+                .x(d => x(d.date))
+                .y(d => y(d.value));
+            
+            
+            
+            const lineGroup = svg.selectAll(".line-group")
+                .data(data)
+                .join("g")
+                .attr("class", d => `line-group line-${d.key.replace(/\s+/g, '-')}`);
+
+            const paths = lineGroup.append("path")
+                .attr("class", "line")
+                .attr("d", d => line(d.values))
+                .style("stroke", d => color(d.name));
+            
+            
+            paths.each(function(d) {
+                const totalLength = this.getTotalLength();
+                d3.select(this)
+                    .attr("stroke-dasharray", `${totalLength} ${totalLength}`)
+                    .attr("stroke-dashoffset", totalLength)
+                    .transition()
+                    .duration(2000)
+                    .ease(d3.easeCubic)
+                    .attr("stroke-dashoffset", 0);
+            });
+
+            
+           
+            const legend = svg.append("g")
+                .attr("class", "legend")
+                .attr("transform", `translate(${width + 20}, 20)`);
+                
+            const legendItems = legend.selectAll(".legend-item")
+                .data(data)
+                .join("g")
+                .attr("class", d => `legend-item legend-${d.key.replace(/\s+/g, '-')}`)
+                .attr("transform", (d, i) => `translate(0, ${i * 30})`)
+                .on("click", toggleLineVisibility);
+                
+            
+            legendItems.append("rect")
+                .attr("x", 0)
+                .attr("y", -10)
+                .attr("width", 15)
+                .attr("height", 3)
+                .attr("rx", 1.5)
+                .style("fill", d => color(d.name));
+                
+            
+            legendItems.append("text")
+                .attr("x", 25)
+                .attr("y", 0)
+                .attr("dy", "0.35em")
+                .style("text-anchor", "start")
+                .text(d => d.name)
+                .style("fill", d => color(d.name))
+                .style("font-size", "14px");
+                
+            function toggleLineVisibility(event, d) {
+                const lineSelector = `.line-${d.key.replace(/\s+/g, '-')}`;
+                const isVisible = d3.select(lineSelector).style("opacity") !== "0.2";
+                
+                d3.select(lineSelector)
+                    .transition()
+                    .duration(300)
+                    .style("opacity", isVisible ? 0.2 : 1)
+                    .style("pointer-events", isVisible ? "none" : "all");
+
+                d3.select(this)
+                    .transition()
+                    .duration(300)
+                    .style("opacity", isVisible ? 0.6 : 1);
+            }
+
+            
+           
+            const tooltip = d3.select("body") 
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            const overlay = svg.append("rect")
+                .attr("class", "overlay")
+                .attr("width", width)
+                .attr("height", height)
+                .style("fill", "none")
+                .style("pointer-events", "all")
+                .on("mousemove", mousemove)
+                .on("mouseout", mouseout);
+
+            const focus = svg.append("g")
+                .attr("class", "focus")
+                .style("display", "none");
+
+            focus.append("line")
+                .attr("class", "x-hover-line hover-line")
+                .attr("y1", 0)
+                .attr("y2", height)
+                .attr("stroke", "#999")
+                .attr("stroke-width", "1px")
+                .attr("stroke-dasharray", "3,3");
+
+            const circles = focus.selectAll(".hover-circle")
+                .data(data)
+                .join("circle")
+                .attr("class", "hover-circle")
+                .attr("r", 5)
+                .style("fill", d => color(d.name))
+                .style("stroke", "#fff")
+                .style("stroke-width", 2);
+
+            const bisectDate = d3.bisector(d => d.date).left;
+
+            function mousemove(event) {
+                const [x0] = d3.pointer(event, this);
+                const date = x.invert(x0);
+                const i = bisectDate(rawData, date, 1);
+                
+                const d0 = rawData[i - 1];
+                const d1 = rawData[i];
+                const d = d1 && date - d0.date > d1.date - date ? d1 : d0;
+                
+                if (!d || !d.date) {
+                    focus.style("display", "none");
+                    tooltip.style("opacity", 0);
+                    return;
+                }
+
+                focus.style("display", null);
+                
+                focus.select(".x-hover-line").attr("transform", `translate(${x(d.date)}, 0)`);
+                
+                circles.attr("transform", (series) => {
+                    return `translate(${x(d.date)}, ${y(d[series.key])})`;
+                });
+
+                let tooltipContent = `<div class="tooltip-title">${d3.timeFormat("%b %d, %Y")(d.date)}</div>`;
+                
+                const tooltipData = lineKeys.map(line => ({
+                    name: line.name,
+                    value: d[line.key],
+                    color: color(line.name)
+                }));
+
+                tooltipData.forEach(item => {
+                    tooltipContent += `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="mr-3" style="color: ${item.color}; font-weight: bold;">${item.name}:</span>
+                            <span class="text-right text-gray-700">${d3.format("$,.0f")(item.value)}</span>
+                        </div>
+                    `;
+                });
+
+                const [mouseX, mouseY] = d3.pointer(event, document.body); 
+                tooltip
+                    .html(tooltipContent)
+                    .style("opacity", 1)
+                    .style("left", `${mouseX + 15}px`)
+                    .style("top", `${mouseY - 15}px`);
+            }
+
+            function mouseout() {
+                focus.style("display", "none");
+                tooltip.style("opacity", 0);
+            }
+        };
+
+       
+        window.addEventListener('resize', () => {
+            
+             if (document.querySelector("#dataTable tbody tr:not(:first-child)")) {
+                    const csvFileInput = document.getElementById('csvFile');
+                    if (csvFileInput.files.length > 0) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            const text = event.target.result;
+                            const processedData = processCSV(text);
+                            drawChart(processedData); 
+                        };
+                        reader.readAsText(csvFileInput.files[0]);
+                    }
+             }
+        });
+    </script>
+</body>
+</html>
